@@ -1,0 +1,5 @@
+# run_bonsai.bat is plain ASCII but still needs exact CRLF preserved for
+# reliable cmd.exe execution; run_bonsai.ko.bat is CP949-encoded (see SRS.md
+# problem 1) and CRLF is mandatory. Git's CRLF<->LF normalization must never
+# touch either file, regardless of any user's core.autocrlf setting.
+*.bat -text
