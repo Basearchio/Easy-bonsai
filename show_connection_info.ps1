@@ -1,0 +1,116 @@
+$ErrorActionPreference = 'SilentlyContinue'
+
+$Lang = if ($env:BONSAI_LANG -eq 'ko') { 'ko' } else { 'en' }
+
+if ($Lang -eq 'ko') {
+    # Started via `start /B`, sharing the parent console (chcp 949, per SRS 4.2
+    # problem 1/5) - but that codepage doesn't always carry over automatically,
+    # so Write-Host output can come out garbled unless this is set explicitly.
+    try { [Console]::OutputEncoding = [System.Text.Encoding]::GetEncoding(949) } catch {}
+}
+
+$Family   = $env:BONSAI_FAMILY
+$Model    = $env:BONSAI_MODEL
+$HostAddr = if ($env:BONSAI_HOST) { $env:BONSAI_HOST } else { '127.0.0.1' }
+$Port     = 8080
+
+# Wait for the server to actually be ready so this prints after the load logs,
+# not before them. Runs in the background alongside start_llama_server.ps1.
+$MaxWaitSeconds = 300
+for ($waited = 0; $waited -lt $MaxWaitSeconds; $waited++) {
+    try {
+        $resp = Invoke-WebRequest -Uri "http://127.0.0.1:$Port/health" -TimeoutSec 2 -UseBasicParsing -ErrorAction Stop
+        if ($resp.StatusCode -eq 200) { break }
+    } catch {}
+    Start-Sleep -Seconds 1
+}
+
+$DemoDir = Join-Path $PSScriptRoot 'Bonsai-demo'
+if ($Family -eq 'ternary') {
+    $ModelDir     = Join-Path $DemoDir "models\ternary-gguf\$Model"
+    $QuantPattern = '*-Q2_0.gguf'
+} else {
+    $ModelDir     = Join-Path $DemoDir "models\gguf\$Model"
+    $QuantPattern = '*-Q1_0.gguf'
+}
+
+$ModelFile = Get-ChildItem -Path $ModelDir -Filter $QuantPattern -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -notlike '*mmproj*' -and $_.Name -notlike '*dspark*' -and $_.Name -notlike '*kv-bias*' } |
+    Select-Object -First 1
+$ModelId = if ($ModelFile) {
+    $ModelFile.Name
+} elseif ($Lang -eq 'ko') {
+    '(모델 파일을 찾지 못함 - setup.ps1을 먼저 실행하세요)'
+} else {
+    '(model file not found - run setup.ps1 first)'
+}
+
+$HasVision = $false
+if ($Model -eq '27B') {
+    $Mmproj = Get-ChildItem -Path $ModelDir -Filter '*mmproj*.gguf' -File -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($Mmproj) { $HasVision = $true }
+}
+
+$LanUrl = $null
+if ($HostAddr -eq '0.0.0.0') {
+    $ip = $null
+    $tsExe = (Get-Command tailscale -ErrorAction SilentlyContinue).Source
+    if (-not $tsExe) {
+        $tsCandidate = "$env:ProgramFiles\Tailscale\tailscale.exe"
+        if (Test-Path $tsCandidate) { $tsExe = $tsCandidate }
+    }
+    if ($tsExe) {
+        try { $ip = (& $tsExe ip -4 2>$null | Select-Object -First 1) } catch {}
+    }
+    if (-not $ip) {
+        $ip = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+            Where-Object { $_.IPAddress -notlike '127.*' -and $_.PrefixOrigin -ne 'WellKnown' -and $_.InterfaceAlias -notmatch 'Loopback' } |
+            Select-Object -First 1 -ExpandProperty IPAddress
+    }
+    if ($ip) { $LanUrl = "http://${ip}:$Port" }
+}
+
+Write-Host ""
+Write-Host "=========================================" -ForegroundColor Cyan
+if ($Lang -eq 'ko') {
+    Write-Host "  연결 정보 (서버 준비 완료)" -ForegroundColor Cyan
+    Write-Host "=========================================" -ForegroundColor Cyan
+    Write-Host "  모델 ID       : $ModelId"
+    if ($HasVision) {
+        Write-Host "  기능          : 이미지 입력 지원(비전)"
+    }
+    Write-Host "  API (로컬)    : http://127.0.0.1:$Port/v1"
+    if ($LanUrl) {
+        Write-Host "  API (LAN/원격): $LanUrl/v1"
+        Write-Host "  브라우저 채팅 : $LanUrl"
+    } else {
+        Write-Host "  브라우저 채팅 : http://127.0.0.1:$Port"
+    }
+    Write-Host "  API Key       : 필요 없음 (인증 없음)"
+    Write-Host "  컨텍스트 길이 : $($env:BONSAI_CTX) 토큰 (config.bat의 BONSAI_CTX로 변경 가능)"
+    Write-Host "=========================================" -ForegroundColor Cyan
+    Write-Host "  * 위 브라우저 채팅 주소를 Ctrl + 마우스 왼쪽 클릭하면 바로 열립니다." -ForegroundColor Yellow
+    Write-Host "  * 이 창을 열어둬야 서버가 계속 유지됩니다. 창을 닫으면 서버도 종료됩니다." -ForegroundColor Yellow
+    Write-Host "  * 다 쓰셨으면 이 창에서 Ctrl+C 를 눌러 서버를 종료하세요." -ForegroundColor Yellow
+} else {
+    Write-Host "  Connection Info (server ready)" -ForegroundColor Cyan
+    Write-Host "=========================================" -ForegroundColor Cyan
+    Write-Host "  Model ID      : $ModelId"
+    if ($HasVision) {
+        Write-Host "  Feature       : Image input supported (vision)"
+    }
+    Write-Host "  API (local)   : http://127.0.0.1:$Port/v1"
+    if ($LanUrl) {
+        Write-Host "  API (LAN/remote): $LanUrl/v1"
+        Write-Host "  Browser chat  : $LanUrl"
+    } else {
+        Write-Host "  Browser chat  : http://127.0.0.1:$Port"
+    }
+    Write-Host "  API Key       : Not required (no auth)"
+    Write-Host "  Context length: $($env:BONSAI_CTX) tokens (change via BONSAI_CTX in config.bat)"
+    Write-Host "=========================================" -ForegroundColor Cyan
+    Write-Host "  * Ctrl + left-click the Browser chat link above to open it directly." -ForegroundColor Yellow
+    Write-Host "  * Keep this window open to keep the server running. Closing it stops the server." -ForegroundColor Yellow
+    Write-Host "  * When you're done, press Ctrl+C in this window to stop the server." -ForegroundColor Yellow
+}
+Write-Host ""
