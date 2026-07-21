@@ -103,6 +103,14 @@ if "%BONSAI_MODEL%"=="27B" (
 )
 
 echo.
+echo [선택] 컨텍스트 길이 (모델이 기억하는 토큰 수):
+echo   1. 고정 8192       - VRAM 사용량이 일정하고 더 적음 (기본)
+echo   2. 자동(공식)      - 업스트림 RAM 기반 기본값; 컨텍스트는 크지만 VRAM을 더 씀
+echo   둘 다 괜찮습니다 - 나중에 config.bat의 BONSAI_CTX에서 언제든 바꿀 수 있습니다.
+choice /c 12 /n /m "번호 입력 (1 또는 2): "
+if errorlevel 2 (set BONSAI_CTX=) else (set BONSAI_CTX=8192)
+
+echo.
 choice /c YN /n /m "Tailscale/LAN의 다른 기기에서도 접속 가능하게 열까요? (Y/N): "
 if errorlevel 2 (
     set BONSAI_HOST=127.0.0.1
@@ -120,17 +128,20 @@ if errorlevel 2 (
 ) > "%CONFIG_FILE%"
 echo [INFO] 설정을 저장했습니다. 다음 실행부터는 바로 서버가 시작됩니다.
 echo        설정을 바꾸고 싶으면 "%CONFIG_FILE%" 파일을 삭제하고 다시 실행하세요.
-echo        컨텍스트 길이(기본 8192)만 바꾸고 싶으면 "%CONFIG_FILE%"의 BONSAI_CTX 값만 수정하세요.
+echo        컨텍스트 길이: "%CONFIG_FILE%"의 BONSAI_CTX (8192 = 고정, 비움 = 공식 RAM 기반 자동).
 
 :start_server
+rem BONSAI_CTX는 자식 프로세스에 상속되며, 업스트림 start_llama_server.ps1이
+rem 이를 직접 읽습니다(값 = 고정 컨텍스트, 비움 = RAM 기반 기본값 = "자동(공식)" 선택).
+rem 별도의 -c 전달은 필요 없습니다.
 if exist "%MMPROJ_SCRIPT%" (
     powershell -NoProfile -ExecutionPolicy Bypass -File "%MMPROJ_SCRIPT%"
 )
-echo [INFO] 서버를 시작합니다 (포트 8080, repeat-penalty 1.2 적용)...
+echo [INFO] 서버를 시작합니다 (포트 8080)...
 if exist "%INFO_SCRIPT%" (
     start "" /B powershell -NoProfile -ExecutionPolicy Bypass -File "%INFO_SCRIPT%"
 )
-powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\start_llama_server.ps1" -c %BONSAI_CTX% --repeat-penalty 1.2
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\start_llama_server.ps1"
 
 pause
 

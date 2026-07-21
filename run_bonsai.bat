@@ -102,6 +102,14 @@ if "%BONSAI_MODEL%"=="27B" (
 )
 
 echo.
+echo [CHOOSE] Context length (how many tokens the model keeps in memory):
+echo   1. Fixed 8192       - Predictable, lower VRAM (default)
+echo   2. Auto (official)  - Upstream RAM-tiered default; larger context, more VRAM
+echo   Either is fine - you can change it anytime later via BONSAI_CTX in config.bat.
+choice /c 12 /n /m "Enter a number (1 or 2): "
+if errorlevel 2 (set BONSAI_CTX=) else (set BONSAI_CTX=8192)
+
+echo.
 choice /c YN /n /m "Allow access from other devices on Tailscale/LAN? (Y/N): "
 if errorlevel 2 (
     set BONSAI_HOST=127.0.0.1
@@ -119,16 +127,19 @@ if errorlevel 2 (
 ) > "%CONFIG_FILE%"
 echo [INFO] Settings saved. The server will start immediately from now on.
 echo        To change settings, delete "%CONFIG_FILE%" and run this again.
-echo        To change only the context length (default 8192), edit BONSAI_CTX in "%CONFIG_FILE%".
+echo        Context length: BONSAI_CTX in "%CONFIG_FILE%" (8192 = fixed; empty = official RAM-tier auto).
 
 :start_server
+rem BONSAI_CTX is inherited by the child process; upstream start_llama_server.ps1
+rem reads it natively (a value = fixed context; empty = its RAM-tiered default,
+rem the "Auto (official)" choice). No -c passthrough needed.
 if exist "%MMPROJ_SCRIPT%" (
     powershell -NoProfile -ExecutionPolicy Bypass -File "%MMPROJ_SCRIPT%"
 )
-echo [INFO] Starting the server (port 8080, repeat-penalty 1.2)...
+echo [INFO] Starting the server (port 8080)...
 if exist "%INFO_SCRIPT%" (
     start "" /B powershell -NoProfile -ExecutionPolicy Bypass -File "%INFO_SCRIPT%"
 )
-powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\start_llama_server.ps1" -c %BONSAI_CTX% --repeat-penalty 1.2
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\start_llama_server.ps1"
 
 pause

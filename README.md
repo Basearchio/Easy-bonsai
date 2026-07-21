@@ -16,7 +16,7 @@ For development background and troubleshooting history, see [SRS.md](./SRS.md). 
 | Choosing a model | Read the README and set `$env:BONSAI_MODEL` etc. yourself | Guided menu, VRAM/feature notes shown right before you choose |
 | HF token prompt | Manual Enter every time | Auto-skipped |
 | Connection info | Not shown — you have to already know the port/model filename | Auto-printed table (API URL, browser URL, model ID) once the server is ready |
-| VRAM usage | Defaults to a 262K-token KV cache regardless of need (~14.1GB idle for 27B) | Capped to 8192 tokens by default (~10.5GB idle for 27B), adjustable in `config.bat` |
+| VRAM usage | Context sized from **system RAM**, not free VRAM — a 64GB PC gets 65536 tokens (~14GB for 27B), which can exhaust a 16GB card | **Fixed 8192** by default (~10GB for 27B) or **Auto** to match the official RAM-tier — menu choice, saved in `config.bat` (see the VRAM table below) |
 | mmproj precision (27B) | No way to choose BF16 vs Q8_0 — always picks BF16 | Menu to choose, switchable anytime with no re-download |
 | Re-running | Repeat all the manual steps | Remembers your settings, starts immediately |
 
@@ -26,16 +26,16 @@ For development background and troubleshooting history, see [SRS.md](./SRS.md). 
 - (Optional) NVIDIA GPU + up-to-date driver — falls back to CPU automatically if absent
 - (Optional) [Tailscale](https://tailscale.com/) — if you want to connect from another device
 
-## Measured Performance (for reference)
+## Context length vs VRAM (why 8192 is the default)
 
-RTX 5070 Ti (16GB), `BONSAI_CTX=8192`, 27B vision response:
+RTX 5070 Ti (16GB), Ternary-Bonsai-27B (Q2_0), `-ngl 99` (all layers on GPU), from an idle baseline of 1220 MiB:
 
-| Family | Generation speed |
-| :--- | :--- |
-| ternary (2-bit, Q2_0) | ~48-50 t/s |
-| bonsai (1-bit, Q1_0) | ~54-59 t/s |
+| Context choice | `-c` | GPU memory used | vs 8192 |
+| :--- | :--- | :--- | :--- |
+| Fixed 8192 (default) | 8192 | 10410 MiB | — |
+| Auto / official RAM-tier | 65536 | 14079 MiB | **+3669 MiB (~3.6GB)** |
 
-Varies with GPU/driver/context length.
+The extra ~3.6GB is pure KV cache (~65.5 KB/token; model weights are identical across both rows). The upstream "Auto" default sizes context from **system RAM** (61GB here → 65536), not free VRAM, so on a 16GB card it can run out of memory once the idle baseline is higher or a long prompt lands. The launcher's context menu lets you pick **Fixed 8192** (safe default) or **Auto (official)**.
 
 ## Getting Started
 
@@ -61,8 +61,9 @@ flowchart TD
     H --> I["Run setup.ps1<br/>(Python·GPU detection·model download)"]
     I --> I2{"27B selected?"}
     I2 -- "Yes" --> I3["③ Choose mmproj precision: BF16 / Q8_0"]
-    I2 -- "No" --> J
-    I3 --> J["④ Choose LAN/Tailscale exposure"]
+    I2 -- "No" --> P
+    I3 --> P["④ Choose context length: Fixed 8192 / Auto (RAM-tier)"]
+    P --> J["⑤ Choose LAN/Tailscale exposure"]
     J --> K["Save settings to config.bat"]
     K --> E
 

@@ -70,6 +70,36 @@ if ($HostAddr -eq '0.0.0.0') {
     if ($ip) { $LanUrl = "http://${ip}:$Port" }
 }
 
+# Context length actually loaded by the server, read straight from its /props
+# endpoint - no need to recompute upstream's RAM tier, and it stays correct even
+# if upstream changes how the default is chosen. Falls back to BONSAI_CTX only if
+# the query fails. $CtxAuto marks that no value was pinned (Auto = upstream chose).
+$CtxValue = $null
+try {
+    $props = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/props" -TimeoutSec 5 -ErrorAction Stop
+    $CtxValue = $props.default_generation_settings.n_ctx
+} catch {}
+if (-not $CtxValue) { $CtxValue = $env:BONSAI_CTX }
+$CtxAuto = -not $env:BONSAI_CTX
+
+# First Auto run: BONSAI_CTX is empty in config.bat. Pin the server's actual
+# context back into it (not a value we computed - the one the server loaded), so
+# the next launch shows a concrete number to hand-edit instead of a blank field.
+# Only touches an empty BONSAI_CTX line; a fixed or already-pinned value is left
+# alone, and the user can re-empty it to go back to the official auto default.
+if ($CtxAuto -and $CtxValue) {
+    $ConfigFile = Join-Path $PSScriptRoot 'config.bat'
+    if (Test-Path $ConfigFile) {
+        try {
+            $cfg = Get-Content -Raw -Path $ConfigFile
+            if ($cfg -match '(?m)^\s*set BONSAI_CTX=\s*$') {
+                $cfg = $cfg -replace '(?m)^\s*set BONSAI_CTX=\s*$', "set BONSAI_CTX=$CtxValue"
+                Set-Content -Path $ConfigFile -Value $cfg -NoNewline -Encoding ascii
+            }
+        } catch {}
+    }
+}
+
 Write-Host ""
 Write-Host "=========================================" -ForegroundColor Cyan
 if ($Lang -eq 'ko') {
@@ -87,7 +117,7 @@ if ($Lang -eq 'ko') {
         Write-Host "  브라우저 채팅 : http://127.0.0.1:$Port"
     }
     Write-Host "  API Key       : 필요 없음 (인증 없음)"
-    Write-Host "  컨텍스트 길이 : $($env:BONSAI_CTX) 토큰 (config.bat의 BONSAI_CTX로 변경 가능)"
+    Write-Host "  컨텍스트 길이 : $CtxValue 토큰$(if ($CtxAuto) { ' (자동, 공식 기본값)' }) (config.bat의 BONSAI_CTX로 변경 가능)"
     Write-Host "=========================================" -ForegroundColor Cyan
     Write-Host "  * 위 브라우저 채팅 주소를 Ctrl + 마우스 왼쪽 클릭하면 바로 열립니다." -ForegroundColor Yellow
     Write-Host "  * 이 창을 열어둬야 서버가 계속 유지됩니다. 창을 닫으면 서버도 종료됩니다." -ForegroundColor Yellow
@@ -107,7 +137,7 @@ if ($Lang -eq 'ko') {
         Write-Host "  Browser chat  : http://127.0.0.1:$Port"
     }
     Write-Host "  API Key       : Not required (no auth)"
-    Write-Host "  Context length: $($env:BONSAI_CTX) tokens (change via BONSAI_CTX in config.bat)"
+    Write-Host "  Context length: $CtxValue tokens$(if ($CtxAuto) { ' (auto, official default)' }) (change via BONSAI_CTX in config.bat)"
     Write-Host "=========================================" -ForegroundColor Cyan
     Write-Host "  * Ctrl + left-click the Browser chat link above to open it directly." -ForegroundColor Yellow
     Write-Host "  * Keep this window open to keep the server running. Closing it stops the server." -ForegroundColor Yellow
