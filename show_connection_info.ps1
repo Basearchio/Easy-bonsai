@@ -1,11 +1,29 @@
-$ErrorActionPreference = 'SilentlyContinue'
+﻿$ErrorActionPreference = 'SilentlyContinue'
 
 $Lang = if ($env:BONSAI_LANG -eq 'ko') { 'ko' } else { 'en' }
 
 if ($Lang -eq 'ko') {
     # Started via `start /B`, sharing the parent console (chcp 949, per SRS 4.2
-    # problem 1/5) - but that codepage doesn't always carry over automatically,
-    # so Write-Host output can come out garbled unless this is set explicitly.
+    # problem 1/5/6) - but on systems where consoles are delegated to Windows
+    # Terminal (ConPTY) instead of a plain conhost window (Windows 11 default
+    # since ~24H2, and not something this script controls on the user's PC),
+    # chcp's codepage change can lag behind this background process attaching
+    # to the console, so a single attempt intermittently misses it and output
+    # comes out garbled. Re-assert the Win32 codepage directly (what chcp
+    # itself calls) and verify it actually stuck before proceeding, instead of
+    # trusting one attempt.
+    Add-Type -Name Kernel32 -Namespace Bonsai -MemberDefinition @'
+[DllImport("kernel32.dll")] public static extern bool SetConsoleOutputCP(uint wCodePageID);
+[DllImport("kernel32.dll")] public static extern uint GetConsoleOutputCP();
+'@ -ErrorAction SilentlyContinue
+
+    for ($i = 0; $i -lt 10; $i++) {
+        try {
+            [Bonsai.Kernel32]::SetConsoleOutputCP(949) | Out-Null
+            if ([Bonsai.Kernel32]::GetConsoleOutputCP() -eq 949) { break }
+        } catch {}
+        Start-Sleep -Milliseconds 100
+    }
     try { [Console]::OutputEncoding = [System.Text.Encoding]::GetEncoding(949) } catch {}
 }
 

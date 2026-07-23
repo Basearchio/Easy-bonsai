@@ -7,3 +7,8 @@ config.bat
 
 # Claude Code local project settings.
 .claude/
+
+# Isolated UTF-8 staging workspace for editing the CP949-encoded
+# run_bonsai.ko.bat without VSCode corrupting its encoding (see
+# .ko-staging/README.md and SRS.md section 4.1).
+.ko-staging/
